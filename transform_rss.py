@@ -1,61 +1,53 @@
-import xml.etree.ElementTree as ET
 import requests
+from lxml import etree as ET
 
-# Register namespace for media
-ET.register_namespace("media", "http://search.yahoo.com/mrss/")
+# 1. Define the source RSS feed
+FEED_URL = "https://events.howard.edu/calendar.xml"
 
-# Input and output files
-INPUT_FEED = "calendar.xml"
-OUTPUT_FEED = "transformed_feed.xml"
+# 2. Download the feed
+response = requests.get(FEED_URL)
+response.raise_for_status()  # stop if download fails
+xml_content = response.content
 
-# Download the RSS feed (optional: you can skip this if file is local)
-url = "https://events.howard.edu/calendar.xml?card_size=small&experience=&hide_recurring=1"
-with requests.get(url) as r:
-    with open(INPUT_FEED, "wb") as f:
-        f.write(r.content)
+# 3. Parse the XML into a tree structure
+parser = ET.XMLParser(recover=True)  # recover=True makes it tolerant of bad XML
+root = ET.fromstring(xml_content, parser=parser)
 
-# Parse the feed
-tree = ET.parse(INPUT_FEED)
-root = tree.getroot()
-
-# XML namespaces
 ns = {"media": "http://search.yahoo.com/mrss/"}
 
-# Create a new root
-new_root = ET.Element("rss", version="2.0")
-new_channel = ET.SubElement(new_root, "channel")
+channel = root.find("channel")
+if channel is None:
+    raise SystemExit("channel element not found in feed")
 
-# Copy channel-level elements except items
-for child in root.find("channel"):
-    if child.tag != "item":
-        new_channel.append(child)
+all_items = channel.findall("item")
+print(f"Found {len(all_items)} items in source feed")  # diagnostic
 
-# Process each item
-for item in root.findall("channel/item"):
-    new_item = ET.SubElement(new_channel, "item")
+for extra in all_items[10:]:
+    channel.remove(extra)
 
-    # Copy title and other basic fields
-    for tag in ["title", "link", "pubDate", "guid"]:
-        el = item.find(tag)
-        if el is not None:
-            new_el = ET.SubElement(new_item, tag)
-            new_el.text = el.text
+kept_items = channel.findall("item")
+print(f"Kept {len(kept_items)} items after trimming")  # diagnostic
 
-    # Handle description with CDATA
-    desc = item.find("description")
-    media = item.find("media:content", ns)
+# ...existing item-processing code...
+items = kept_items  # use the trimmed list
 
-    if desc is not None:
-        desc_text = desc.text or ""
-        if media is not None and "url" in media.attrib:
-            img_url = media.attrib["url"]
-            new_html = f'<div><img src="{img_url}" style="width: 100%;" /></div>{desc_text}'
-            new_desc = ET.SubElement(new_item, "description")
-            new_desc.text = ET.CDATA(new_html)
-        else:
-            new_desc = ET.SubElement(new_item, "description")
-            new_desc.text = ET.CDATA(desc_text)
+for item in items:
+    media = item.find("media:content", namespaces=ns)   # locate media:content
+    desc = item.find("description")                     # locate description
 
-# Write out the transformed feed
-tree = ET.ElementTree(new_root)
-tree.write(OUTPUT_FEED, encoding="utf-8", xml_declaration=True)
+    if media is not None and desc is not None:
+        img_url = media.attrib.get("url")  # get the image URL
+        if img_url:
+            original_html = desc.text or ""
+            new_html = (
+                f'<div><img src="{img_url}" style="width: 100%;" />'
+                f'<div>{original_html}</div></div>'
+            )
+
+            desc.clear()
+            desc.text = ET.CDATA(new_html)
+
+# 8. Save the transformed feed (use pretty_print so file is readable)
+tree = ET.ElementTree(root)
+tree.write("transformed_feed.xml", encoding="utf-8", xml_declaration=True, pretty_print=True)
+print("Wrote transformed_feed.xml")
