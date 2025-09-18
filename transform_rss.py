@@ -62,14 +62,14 @@ for item in kept_items:
             original_html = desc.text or ""
 
             # Decode URL-encoded characters to remove '+' etc.
-            decoded_html = urllib.parse.unquote(original_html)
+            cleaned_html = original_html.replace('+', ' ')
 
             # Build new HTML with pubDate under image
             new_html = (
                 f'<div>'
                 f'  <img src="{img_url}" style="width: 100%;" />'
                 f'  <div style="font-size: 0.9em; color: #555;"><strong>{pub_date_text}</strong></div>'
-                f'  <div>{decoded_html}</div>'
+                f'  <div>{cleaned_html}</div>'
                 f'</div>'
             )
 
